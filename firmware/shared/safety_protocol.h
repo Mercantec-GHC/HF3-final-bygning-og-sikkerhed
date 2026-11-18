@@ -28,3 +28,4 @@ const int WATCHDOG_TIMEOUT_MS = 2000;
 
 // BLE RSSI-filter
 const int RSSI_WINDOW_SIZE = 5;
+const int RSSI_ALARM_THRESHOLD = -65; // ~2 meter afstand (kalibreres senere)

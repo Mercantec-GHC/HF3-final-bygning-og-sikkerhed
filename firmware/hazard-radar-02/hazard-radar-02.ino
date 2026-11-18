@@ -1,7 +1,19 @@
 #include <ArduinoBLE.h>
+#include <Arduino_MKRIoTCarrier.h>
 #include "../shared/safety_protocol.h"
 #include "../shared/arduino_secrets.h"
 
+MKRIoTCarrier carrier;
+
+// De 3 tilstande som radaren kan vaere i
+enum RadarState {
+  IDLE,         // Alt er roligt (groent lys, ingen lyd)
+  DETECTING,    // Arbejderen er taet paa, vi taeller 1.5 sek (debounce)
+  ALARM_ACTIVE  // Faren er bekraeftet: roedt lys + sirene!
+};
+
+RadarState currentState = IDLE;
+unsigned long detectStartTime = 0;
 unsigned long lastPrintTime = 0;
 
 // Ringbuffer til de sidste 5 RSSI-maalinger (RSSI_WINDOW_SIZE = 5)
@@ -26,9 +38,26 @@ int updateRssiAverage(int newRssi) {
   return (int)(sum / rssiCount);
 }
 
+// Styrer LED-farve og sirene ud fra om alarmen er aktiv
+void setAlarmHardware(bool alarmOn) {
+  if (alarmOn) {
+    carrier.leds.fill(carrier.leds.Color(255, 0, 0), 0, 5); // Roed
+    carrier.leds.show();
+    carrier.Buzzer.sound(1800);
+  } else {
+    carrier.leds.fill(carrier.leds.Color(0, 255, 0), 0, 5); // Groed (sikker)
+    carrier.leds.show();
+    carrier.Buzzer.noSound();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000) {}
+
+  CARRIER_CASE = false;
+  carrier.begin();
+  setAlarmHardware(false);
 
   Serial.print("Starter enhed: ");
   Serial.println(DEVICE_ID_RADAR);
@@ -63,5 +92,25 @@ void loop() {
     Serial.print(rawRssi);
     Serial.print(" | Avg(5): ");
     Serial.println(avgRssi);
+
+    // 3. Tilstandsmaskine (State Machine) med 1.5s debounce
+    if (currentState != ALARM_ACTIVE) {
+      if (avgRssi >= RSSI_ALARM_THRESHOLD) {
+        if (currentState == IDLE) {
+          currentState = DETECTING;
+          detectStartTime = now;
+          Serial.println("Status -> DETECTING (venter 1.5s)...");
+        } else if (currentState == DETECTING && (now - detectStartTime >= RSSI_DEBOUNCE_MS)) {
+          currentState = ALARM_ACTIVE;
+          setAlarmHardware(true);
+          Serial.println("ALARM_ACTIVE! Sirene og roede LED'er taendt!");
+        }
+      } else {
+        if (currentState == DETECTING) {
+          currentState = IDLE;
+          Serial.println("Falsk alarm undgaaet -> tilbage til IDLE");
+        }
+      }
+    }
   }
 }
