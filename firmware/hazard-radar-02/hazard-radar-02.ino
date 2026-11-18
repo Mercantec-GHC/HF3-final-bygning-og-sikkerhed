@@ -4,6 +4,28 @@
 
 unsigned long lastPrintTime = 0;
 
+// Ringbuffer til de sidste 5 RSSI-maalinger (RSSI_WINDOW_SIZE = 5)
+int rssiSamples[RSSI_WINDOW_SIZE];
+int rssiIndex = 0;
+int rssiCount = 0;
+
+// Gemmer ny RSSI-maaling og returnerer gennemsnittet af op til 5 maalinger
+int updateRssiAverage(int newRssi) {
+  rssiSamples[rssiIndex] = newRssi;
+  rssiIndex = (rssiIndex + 1) % RSSI_WINDOW_SIZE;
+
+  if (rssiCount < RSSI_WINDOW_SIZE) {
+    rssiCount++;
+  }
+
+  long sum = 0;
+  for (int i = 0; i < rssiCount; i++) {
+    sum += rssiSamples[i];
+  }
+
+  return (int)(sum / rssiCount);
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000) {}
@@ -34,8 +56,12 @@ void loop() {
   // 2. Tjek om vi har fanget en BLE-pakke fra vores tag
   BLEDevice peripheral = BLE.available();
   if (peripheral) {
-    int rssi = peripheral.rssi();
-    Serial.print("Arbejder-tag fundet! RSSI = ");
-    Serial.println(rssi);
+    int rawRssi = peripheral.rssi();
+    int avgRssi = updateRssiAverage(rawRssi);
+
+    Serial.print("Raw RSSI: ");
+    Serial.print(rawRssi);
+    Serial.print(" | Avg(5): ");
+    Serial.println(avgRssi);
   }
 }
