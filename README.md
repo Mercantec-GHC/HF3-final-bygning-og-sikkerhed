@@ -54,3 +54,23 @@ H3-project/
 * [docs/plan-person-a.md](./docs/plan-person-a.md) — Arbejdsplan for **Person A** (`firmware/`).
 * [docs/plan-person-b.md](./docs/plan-person-b.md) — Arbejdsplan for **Person B** (`backend/` & `frontend/`).
 * [docs/git-workflow.md](./docs/git-workflow.md) — Git-strategi (`main`, `dev`, `feat/person-a`, `feat/person-b`).
+
+---
+
+## Hardware Pinout & Firmware Opsætning (`MKR WiFi 1010 + IoT Carrier`)
+
+Begge `Arduino MKR WiFi 1010`-boards sidder direkte i `Arduino MKR IoT Carrier` (intern bus, ingen løse ledninger):
+
+| Komponent | Pin / Interface | Anvendelse |
+| :--- | :--- | :--- |
+| **NINA-W102** (`Wi-Fi + BLE`) | Indbygget (`SPI` / `UART`) | Samtidig Wi-Fi (`WiFiNINA`) og BLE-scanner (`ArduinoBLE`) — kræver NINA firmware `3.0.1+` |
+| **5 × RGB LED** (`DotStar`) | `D5` (`DATAPIN`), `D4` (`CLOCKPIN`) | Grøn (`IDLE`) / blinkende rød (`ALARM_ACTIVE`) |
+| **Buzzer** (Sirene) | `D7` | Lokal Fail-Safe alarmsirene (`1800 Hz`) |
+| **Touch-knapper** (`Touch0–4`) | `MCHPTouch` | `Touch0`: Lokal alarmkvittering (`LOCAL_ACK`) |
+| **TFT Display** (`ST7789`) | `SPI` + `D3` (`Backlight`) | QR-kode og 60s TOTP PIN på `Arduino #1` |
+| **HTS221 & LSM6DS3** | Intern `I2C` (`Wire`) | Klima (`Temp/Fugt`) og sabotage-accelerometer (`Tamper`) |
+
+### Opsætning af fælles bibliotek (`firmware/shared/`)
+1. Kopier eller symlink `firmware/shared/` ind i din lokale Arduino-biblioteksmappe som `ByggepladsShared` (fx `Documents/Arduino/libraries/ByggepladsShared`).
+2. Kopier `firmware/shared/src/arduino_secrets.example.h` til `firmware/shared/src/arduino_secrets.h` og udfyld Wi-Fi + backend-IP (`arduino_secrets.h` ignoreres af Git).
+3. Åbn `firmware/hazard-radar-02/hazard-radar-02.ino` i Arduino IDE med board **Arduino MKR WiFi 1010**.
