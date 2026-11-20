@@ -1,6 +1,6 @@
 #pragma once
 
-// Kopier denne fil til "arduino_secrets.h" og udfyld dine egne vaerdier.
+// Kopier denne fil til "arduino_secrets.h" i samme mappe og udfyld dine egne vaerdier.
 // "arduino_secrets.h" er i .gitignore og bliver ikke gemt i Git.
 
 const char* WIFI_SSID = "DIT_WIFI_NAVN";

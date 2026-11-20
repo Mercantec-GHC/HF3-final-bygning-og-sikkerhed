@@ -24,6 +24,9 @@ const unsigned long HEARTBEAT_INTERVAL_MS = 5000;
 const unsigned long CLIMATE_INTERVAL_MS = 30000;
 const unsigned long STATE_POLL_INTERVAL_MS = 1500;
 const unsigned long RSSI_DEBOUNCE_MS = 1500;
+const unsigned long ALARM_BLINK_INTERVAL_MS = 250;
+const unsigned long ACK_COOLDOWN_MS = 5000;
+const unsigned long WIFI_RETRY_INTERVAL_MS = 10000;
 const int WATCHDOG_TIMEOUT_MS = 2000;
 
 // BLE RSSI-filter
