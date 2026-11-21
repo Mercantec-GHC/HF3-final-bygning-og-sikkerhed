@@ -6,7 +6,7 @@
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public int? Age { get; set; }
-        public List<Shift?>? Shifts { get; set; }
-        public List<Incidents?>? Incidents { get; set; }
+        public ICollection<Shift> Shifts { get; } = new List<Shift>();
+        public ICollection<Incidents> Incidents { get; } = new List<Incidents>();
     }
 }
