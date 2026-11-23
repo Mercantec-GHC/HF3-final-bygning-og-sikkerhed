@@ -126,7 +126,7 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   wifiClient.println(contentLengthHeader);
   wifiClient.println("Connection: close");
   wifiClient.println();
-  wifiClient.println(jsonBody);
+  wifiClient.print(jsonBody);
 
   // Vent kort paa svar-linjen (maks 1.5 sek), saa vi ikke blokerer loopen
   unsigned long waitStart = millis();
@@ -210,10 +210,10 @@ void loop() {
   if (currentState == ALARM_ACTIVE && carrier.Buttons.onTouchDown(TOUCH0)) {
     currentState = IDLE;
     setAlarmHardware(false);
-    resetRssiFilter();
     ackCooldownUntil = now + ACK_COOLDOWN_MS;
     Serial.println("LOCAL_ACK! Alarm kvitteret via Touch0.");
     sendTelemetryEvent(EVENT_LOCAL_ACK, WORKER_BEACON_UUID, lastAvgRssi);
+    resetRssiFilter();
   }
 
   // 2. Heartbeat-timer (hvert 5. sekund)
