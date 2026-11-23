@@ -145,6 +145,19 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   return true;
 }
 
+// Sender et HEARTBEAT-signal til C# backend hvert 5. sekund (kun naar vi ikke midt i 1.5s debounce)
+void sendHeartbeatIfDue(unsigned long now) {
+  if (currentState == DETECTING) {
+    return;
+  }
+
+  if (now - lastPrintTime >= HEARTBEAT_INTERVAL_MS) {
+    lastPrintTime = now;
+    Serial.println("Sender HEARTBEAT til server...");
+    sendTelemetryEvent(EVENT_HEARTBEAT, nullptr, 0);
+  }
+}
+
 // Forbinder til Wi-Fi uden at fryse systemet permanent, hvis routeren er nede
 void connectWiFiOnce() {
   if (WiFi.status() == WL_NO_MODULE) {
@@ -204,10 +217,7 @@ void loop() {
   }
 
   // 2. Heartbeat-timer (hvert 5. sekund)
-  if (now - lastPrintTime >= HEARTBEAT_INTERVAL_MS) {
-    lastPrintTime = now;
-    Serial.println("Radar er klar (HEARTBEAT)...");
-  }
+  sendHeartbeatIfDue(now);
 
   // 3. Forsoeg kun at genoprette Wi-Fi i IDLE, saa det ikke forsinker BLE-detektion eller alarm
   if (currentState == IDLE && WiFi.status() != WL_CONNECTED && (now - lastWifiAttemptTime >= WIFI_RETRY_INTERVAL_MS)) {
