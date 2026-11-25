@@ -3,6 +3,7 @@
 #include <ArduinoBLE.h>
 #include <Arduino_MKRIoTCarrier.h>
 #include <ArduinoJson.h>
+#include <Adafruit_SleepyDog.h>
 #include <safety_protocol.h>
 #include <arduino_secrets.h>
 
@@ -25,6 +26,7 @@ unsigned long lastBlinkTime = 0;
 unsigned long lastWifiAttemptTime = 0;
 unsigned long ackCooldownUntil = 0;
 bool alarmBlinkOn = false;
+bool wdtEnabled = false;
 
 // Ringbuffer til de sidste 5 RSSI-maalinger (RSSI_WINDOW_SIZE = 5)
 int rssiSamples[RSSI_WINDOW_SIZE];
@@ -106,11 +108,14 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   char jsonBody[256];
   size_t bodyLen = serializeJson(doc, jsonBody, sizeof(jsonBody));
 
+  Watchdog.reset();
   wifiClient.stop();
   if (!wifiClient.connect(SERVER_HOST, SERVER_PORT)) {
+    Watchdog.reset();
     Serial.println("FEJL: Kunne ikke forbinde til C# backend!");
     return false;
   }
+  Watchdog.reset();
 
   char hostHeader[96];
   char contentLengthHeader[48];
@@ -132,6 +137,7 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   // Vent kort paa svar-linjen (maks 1.5 sek), saa vi ikke blokerer loopen
   unsigned long waitStart = millis();
   while (wifiClient.connected() && !wifiClient.available() && (millis() - waitStart < 1500)) {
+    Watchdog.reset();
   }
 
   if (wifiClient.available()) {
@@ -143,6 +149,7 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   }
 
   wifiClient.stop();
+  Watchdog.reset();
   return true;
 }
 
@@ -152,10 +159,13 @@ bool checkRemoteAlarmClear() {
     return false;
   }
 
+  Watchdog.reset();
   wifiClient.stop();
   if (!wifiClient.connect(SERVER_HOST, SERVER_PORT)) {
+    Watchdog.reset();
     return false;
   }
+  Watchdog.reset();
 
   char hostHeader[96];
   snprintf(hostHeader, sizeof(hostHeader), "Host: %s:%d", SERVER_HOST, SERVER_PORT);
@@ -171,17 +181,20 @@ bool checkRemoteAlarmClear() {
 
   unsigned long waitStart = millis();
   while (wifiClient.connected() && !wifiClient.available() && (millis() - waitStart < 1500)) {
+    Watchdog.reset();
   }
 
   // Springer HTTP-headere over indtil den tomme linje foer JSON-kroppen
   if (!wifiClient.find("\r\n\r\n")) {
     wifiClient.stop();
+    Watchdog.reset();
     return false;
   }
 
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, wifiClient);
   wifiClient.stop();
+  Watchdog.reset();
 
   if (err) {
     Serial.print("FEJL ved JSON-laesning af state: ");
@@ -217,7 +230,15 @@ void connectWiFiOnce() {
 
   Serial.print("Forbinder til Wi-Fi: ");
   Serial.println(WIFI_SSID);
+
+  // WiFi.begin() kan tage flere sekunder; pauser WDT midlertidigt saa vi ikke genstarter ved router-udfald
+  if (wdtEnabled) {
+    Watchdog.disable();
+  }
   int status = WiFi.begin(WIFI_SSID, WIFI_PASS);
+  if (wdtEnabled) {
+    Watchdog.enable(WATCHDOG_TIMEOUT_MS);
+  }
 
   if (status == WL_CONNECTED) {
     Serial.print("Wi-Fi forbundet! IP: ");
@@ -250,9 +271,16 @@ void setup() {
   // 2. Forbinder til Wi-Fi bagefter (blokerer ikke permanent ved fejl)
   connectWiFiOnce();
   lastWifiAttemptTime = millis();
+
+  // 3. Aktiverer 2s hardware Watchdog Timer (auto-genstart ved frys)
+  int actualWdtMs = Watchdog.enable(WATCHDOG_TIMEOUT_MS);
+  wdtEnabled = true;
+  Serial.print("Hardware Watchdog aktiv (ms): ");
+  Serial.println(actualWdtMs);
 }
 
 void loop() {
+  Watchdog.reset();
   unsigned long now = millis();
 
   // 1. Opdater touch-knapper paa Carrier og tjek Touch0 (LOCAL_ACK)
