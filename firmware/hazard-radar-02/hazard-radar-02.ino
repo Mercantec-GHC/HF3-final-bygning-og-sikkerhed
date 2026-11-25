@@ -20,6 +20,7 @@ RadarState currentState = IDLE;
 unsigned long detectStartTime = 0;
 unsigned long lastTagSeenTime = 0;
 unsigned long lastPrintTime = 0;
+unsigned long lastStatePollTime = 0;
 unsigned long lastBlinkTime = 0;
 unsigned long lastWifiAttemptTime = 0;
 unsigned long ackCooldownUntil = 0;
@@ -145,6 +146,55 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   return true;
 }
 
+// Spoerger C# backend om alarmen er kvitteret paa mobilen (GET /api/devices/ARDUINO-HAZARD-02/state)
+bool checkRemoteAlarmClear() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  wifiClient.stop();
+  if (!wifiClient.connect(SERVER_HOST, SERVER_PORT)) {
+    return false;
+  }
+
+  char hostHeader[96];
+  snprintf(hostHeader, sizeof(hostHeader), "Host: %s:%d", SERVER_HOST, SERVER_PORT);
+
+  wifiClient.print("GET ");
+  wifiClient.print(API_PATH_RADAR_STATE);
+  wifiClient.println(" HTTP/1.1");
+  wifiClient.println(hostHeader);
+  wifiClient.print("X-Device-Id: ");
+  wifiClient.println(DEVICE_ID_RADAR);
+  wifiClient.println("Connection: close");
+  wifiClient.println();
+
+  unsigned long waitStart = millis();
+  while (wifiClient.connected() && !wifiClient.available() && (millis() - waitStart < 1500)) {
+  }
+
+  // Springer HTTP-headere over indtil den tomme linje foer JSON-kroppen
+  if (!wifiClient.find("\r\n\r\n")) {
+    wifiClient.stop();
+    return false;
+  }
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, wifiClient);
+  wifiClient.stop();
+
+  if (err) {
+    Serial.print("FEJL ved JSON-laesning af state: ");
+    Serial.println(err.c_str());
+    return false;
+  }
+
+  bool alarmActive = doc["alarmActive"] | true;
+  const char* command = doc["command"] | "";
+
+  return (!alarmActive) || (strcmp(command, "CLEAR_ALARM") == 0);
+}
+
 // Sender et HEARTBEAT-signal til C# backend hvert 5. sekund (kun naar vi ikke midt i 1.5s debounce)
 void sendHeartbeatIfDue(unsigned long now) {
   if (currentState == DETECTING) {
@@ -225,9 +275,20 @@ void loop() {
     connectWiFiOnce();
   }
 
-  // 4. Blink LED og sirene hvis alarmen er aktiv
+  // 4. Blink LED og sirene hvis alarmen er aktiv + tjek hvert 1.5s om mobilen har kvitteret
   if (currentState == ALARM_ACTIVE) {
     updateAlarmBlink(now);
+
+    if (now - lastStatePollTime >= STATE_POLL_INTERVAL_MS) {
+      lastStatePollTime = now;
+      if (checkRemoteAlarmClear()) {
+        currentState = IDLE;
+        setAlarmHardware(false);
+        ackCooldownUntil = now + ACK_COOLDOWN_MS;
+        resetRssiFilter();
+        Serial.println("REMOTE_ACK! Alarm slukket via mobil/server.");
+      }
+    }
     return;
   }
 
@@ -272,6 +333,7 @@ void loop() {
       currentState = ALARM_ACTIVE;
       alarmBlinkOn = true;
       lastBlinkTime = now;
+      lastStatePollTime = now;
       setAlarmHardware(true);
       Serial.println("ALARM_ACTIVE! Sirene og roede LED'er taendt!");
       sendTelemetryEvent(EVENT_CRANE_RADAR, WORKER_BEACON_UUID, lastAvgRssi);
