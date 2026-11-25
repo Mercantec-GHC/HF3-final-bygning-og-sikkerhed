@@ -1,11 +1,21 @@
 ﻿namespace ByggepladsSafety.Api.Models
 {
-    public class Incidents
+    public class Incident
     {
-        public int Id { get; set; }
-        public int ShiftId { get; set; }
-        public Shift? Shift { get; set; }
-        public int WorkerId { get; set; }
+        public Guid Id { get; set; }
+        public Guid? WorkerId { get; set; }
         public Worker? Worker { get; set; }
+
+        public string DeviceId { get; set; } = string.Empty;
+        public string? BleUuid { get; set; }
+        public string EventType { get; set; } = string.Empty;
+        public int? RssiValue { get; set; }
+        public double? Temperature { get; set; }
+        public double? Humidity { get; set; }
+        public string Status { get; set; } = "DETECTED";
+        public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset? AcknowledgedAt { get; set; }
+        public int? ReactionTimeSeconds { get; set; }
+        public string? AckSource { get; set; }
     }
 }

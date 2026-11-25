@@ -2,11 +2,12 @@
 {
     public class Worker
     {
-        public int Id { get; set; }
-        public string? FirstName { get; set; }
-        public string? LastName { get; set; }
-        public int? Age { get; set; }
-        public List<Shift?>? Shifts { get; set; }
-        public List<Incidents?>? Incidents { get; set; }
+        public Guid Id { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string BleBeaconUuid { get; set; } = string.Empty;
+        public string? PushSubscriptionJson { get; set; }
+
+        public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
+        public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
     }
 }
