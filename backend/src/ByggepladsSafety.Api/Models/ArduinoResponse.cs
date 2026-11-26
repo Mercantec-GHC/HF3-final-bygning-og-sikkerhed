@@ -2,6 +2,7 @@
 {
     public class ArduinoResponse
     {
+        public string DeviceId { get; set; } = string.Empty;
         public string EventType { get; set; } = string.Empty;
         public string BleUuid { get; set; } = string.Empty;
         public int Rssi { get; set; }
