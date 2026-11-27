@@ -3,6 +3,7 @@
 #include <ArduinoBLE.h>
 #include <Arduino_MKRIoTCarrier.h>
 #include <ArduinoJson.h>
+#include <Adafruit_SleepyDog.h>
 #include <safety_protocol.h>
 #include <arduino_secrets.h>
 
@@ -20,10 +21,12 @@ RadarState currentState = IDLE;
 unsigned long detectStartTime = 0;
 unsigned long lastTagSeenTime = 0;
 unsigned long lastPrintTime = 0;
+unsigned long lastStatePollTime = 0;
 unsigned long lastBlinkTime = 0;
 unsigned long lastWifiAttemptTime = 0;
 unsigned long ackCooldownUntil = 0;
 bool alarmBlinkOn = false;
+bool wdtEnabled = false;
 
 // Ringbuffer til de sidste 5 RSSI-maalinger (RSSI_WINDOW_SIZE = 5)
 int rssiSamples[RSSI_WINDOW_SIZE];
@@ -105,11 +108,14 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   char jsonBody[256];
   size_t bodyLen = serializeJson(doc, jsonBody, sizeof(jsonBody));
 
+  Watchdog.reset();
   wifiClient.stop();
   if (!wifiClient.connect(SERVER_HOST, SERVER_PORT)) {
+    Watchdog.reset();
     Serial.println("FEJL: Kunne ikke forbinde til C# backend!");
     return false;
   }
+  Watchdog.reset();
 
   char hostHeader[96];
   char contentLengthHeader[48];
@@ -126,11 +132,12 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   wifiClient.println(contentLengthHeader);
   wifiClient.println("Connection: close");
   wifiClient.println();
-  wifiClient.println(jsonBody);
+  wifiClient.print(jsonBody);
 
   // Vent kort paa svar-linjen (maks 1.5 sek), saa vi ikke blokerer loopen
   unsigned long waitStart = millis();
   while (wifiClient.connected() && !wifiClient.available() && (millis() - waitStart < 1500)) {
+    Watchdog.reset();
   }
 
   if (wifiClient.available()) {
@@ -142,7 +149,76 @@ bool sendTelemetryEvent(const char* eventType, const char* bleUuid, int rssi) {
   }
 
   wifiClient.stop();
+  Watchdog.reset();
   return true;
+}
+
+// Spoerger C# backend om alarmen er kvitteret paa mobilen (GET /api/devices/ARDUINO-HAZARD-02/state)
+bool checkRemoteAlarmClear() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  Watchdog.reset();
+  wifiClient.stop();
+  if (!wifiClient.connect(SERVER_HOST, SERVER_PORT)) {
+    Watchdog.reset();
+    return false;
+  }
+  Watchdog.reset();
+
+  char hostHeader[96];
+  snprintf(hostHeader, sizeof(hostHeader), "Host: %s:%d", SERVER_HOST, SERVER_PORT);
+
+  wifiClient.print("GET ");
+  wifiClient.print(API_PATH_RADAR_STATE);
+  wifiClient.println(" HTTP/1.1");
+  wifiClient.println(hostHeader);
+  wifiClient.print("X-Device-Id: ");
+  wifiClient.println(DEVICE_ID_RADAR);
+  wifiClient.println("Connection: close");
+  wifiClient.println();
+
+  unsigned long waitStart = millis();
+  while (wifiClient.connected() && !wifiClient.available() && (millis() - waitStart < 1500)) {
+    Watchdog.reset();
+  }
+
+  // Springer HTTP-headere over indtil den tomme linje foer JSON-kroppen
+  if (!wifiClient.find("\r\n\r\n")) {
+    wifiClient.stop();
+    Watchdog.reset();
+    return false;
+  }
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, wifiClient);
+  wifiClient.stop();
+  Watchdog.reset();
+
+  if (err) {
+    Serial.print("FEJL ved JSON-laesning af state: ");
+    Serial.println(err.c_str());
+    return false;
+  }
+
+  bool alarmActive = doc["alarmActive"] | true;
+  const char* command = doc["command"] | "";
+
+  return (!alarmActive) || (strcmp(command, "CLEAR_ALARM") == 0);
+}
+
+// Sender et HEARTBEAT-signal til C# backend hvert 5. sekund (kun naar vi ikke midt i 1.5s debounce)
+void sendHeartbeatIfDue(unsigned long now) {
+  if (currentState == DETECTING) {
+    return;
+  }
+
+  if (now - lastPrintTime >= HEARTBEAT_INTERVAL_MS) {
+    lastPrintTime = now;
+    Serial.println("Sender HEARTBEAT til server...");
+    sendTelemetryEvent(EVENT_HEARTBEAT, nullptr, 0);
+  }
 }
 
 // Forbinder til Wi-Fi uden at fryse systemet permanent, hvis routeren er nede
@@ -154,7 +230,15 @@ void connectWiFiOnce() {
 
   Serial.print("Forbinder til Wi-Fi: ");
   Serial.println(WIFI_SSID);
+
+  // WiFi.begin() kan tage flere sekunder; pauser WDT midlertidigt saa vi ikke genstarter ved router-udfald
+  if (wdtEnabled) {
+    Watchdog.disable();
+  }
   int status = WiFi.begin(WIFI_SSID, WIFI_PASS);
+  if (wdtEnabled) {
+    Watchdog.enable(WATCHDOG_TIMEOUT_MS);
+  }
 
   if (status == WL_CONNECTED) {
     Serial.print("Wi-Fi forbundet! IP: ");
@@ -187,9 +271,16 @@ void setup() {
   // 2. Forbinder til Wi-Fi bagefter (blokerer ikke permanent ved fejl)
   connectWiFiOnce();
   lastWifiAttemptTime = millis();
+
+  // 3. Aktiverer 2s hardware Watchdog Timer (auto-genstart ved frys)
+  int actualWdtMs = Watchdog.enable(WATCHDOG_TIMEOUT_MS);
+  wdtEnabled = true;
+  Serial.print("Hardware Watchdog aktiv (ms): ");
+  Serial.println(actualWdtMs);
 }
 
 void loop() {
+  Watchdog.reset();
   unsigned long now = millis();
 
   // 1. Opdater touch-knapper paa Carrier og tjek Touch0 (LOCAL_ACK)
@@ -197,17 +288,14 @@ void loop() {
   if (currentState == ALARM_ACTIVE && carrier.Buttons.onTouchDown(TOUCH0)) {
     currentState = IDLE;
     setAlarmHardware(false);
-    resetRssiFilter();
     ackCooldownUntil = now + ACK_COOLDOWN_MS;
     Serial.println("LOCAL_ACK! Alarm kvitteret via Touch0.");
     sendTelemetryEvent(EVENT_LOCAL_ACK, WORKER_BEACON_UUID, lastAvgRssi);
+    resetRssiFilter();
   }
 
   // 2. Heartbeat-timer (hvert 5. sekund)
-  if (now - lastPrintTime >= HEARTBEAT_INTERVAL_MS) {
-    lastPrintTime = now;
-    Serial.println("Radar er klar (HEARTBEAT)...");
-  }
+  sendHeartbeatIfDue(now);
 
   // 3. Forsoeg kun at genoprette Wi-Fi i IDLE, saa det ikke forsinker BLE-detektion eller alarm
   if (currentState == IDLE && WiFi.status() != WL_CONNECTED && (now - lastWifiAttemptTime >= WIFI_RETRY_INTERVAL_MS)) {
@@ -215,9 +303,20 @@ void loop() {
     connectWiFiOnce();
   }
 
-  // 4. Blink LED og sirene hvis alarmen er aktiv
+  // 4. Blink LED og sirene hvis alarmen er aktiv + tjek hvert 1.5s om mobilen har kvitteret
   if (currentState == ALARM_ACTIVE) {
     updateAlarmBlink(now);
+
+    if (now - lastStatePollTime >= STATE_POLL_INTERVAL_MS) {
+      lastStatePollTime = now;
+      if (checkRemoteAlarmClear()) {
+        currentState = IDLE;
+        setAlarmHardware(false);
+        ackCooldownUntil = now + ACK_COOLDOWN_MS;
+        resetRssiFilter();
+        Serial.println("REMOTE_ACK! Alarm slukket via mobil/server.");
+      }
+    }
     return;
   }
 
@@ -262,6 +361,7 @@ void loop() {
       currentState = ALARM_ACTIVE;
       alarmBlinkOn = true;
       lastBlinkTime = now;
+      lastStatePollTime = now;
       setAlarmHardware(true);
       Serial.println("ALARM_ACTIVE! Sirene og roede LED'er taendt!");
       sendTelemetryEvent(EVENT_CRANE_RADAR, WORKER_BEACON_UUID, lastAvgRssi);

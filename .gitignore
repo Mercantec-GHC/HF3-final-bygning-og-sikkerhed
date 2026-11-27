@@ -29,6 +29,11 @@ Thumbs.db
 .env
 *.pem
 *.key
+/backend/.env
+/backend/src/ByggepladsSafety.Api/appsettings.json
 
 # Docker volumes
 postgres-data/
+
+# Personal study guides (local only)
+docs/*-guide.md

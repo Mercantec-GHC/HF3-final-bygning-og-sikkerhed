@@ -1,8 +1,14 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio Version 18
+VisualStudioVersion = 18.12.12412.261 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ByggepladsSafety.Api", "src\ByggepladsSafety.Api\ByggepladsSafety.Api.csproj", "{8F9B3A2C-4D5E-4F1A-9B8C-7D6E5F4A3B2C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Элементы решения", "Элементы решения", "{7793FC27-0FF7-4DA1-B709-0B7988C41340}"
+	ProjectSection(SolutionItems) = preProject
+		.env = .env
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,5 +20,11 @@ Global
 		{8F9B3A2C-4D5E-4F1A-9B8C-7D6E5F4A3B2C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8F9B3A2C-4D5E-4F1A-9B8C-7D6E5F4A3B2C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8F9B3A2C-4D5E-4F1A-9B8C-7D6E5F4A3B2C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {816FBDB5-BE56-4D94-9B4E-4548D319DD07}
 	EndGlobalSection
 EndGlobal

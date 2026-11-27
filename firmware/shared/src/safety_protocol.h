@@ -29,6 +29,6 @@ const unsigned long ACK_COOLDOWN_MS = 5000;
 const unsigned long WIFI_RETRY_INTERVAL_MS = 10000;
 const int WATCHDOG_TIMEOUT_MS = 2000;
 
-// BLE RSSI-filter
+// BLE RSSI-filter (v0.2-core: laast til ~2 m afstand og 1.5 s debounce)
 const int RSSI_WINDOW_SIZE = 5;
-const int RSSI_ALARM_THRESHOLD = -65; // ~2 meter afstand (kalibreres senere)
+const int RSSI_ALARM_THRESHOLD = -65; // ~2 meter afstand (justeres kun efter fysisk maaling)

@@ -72,5 +72,6 @@ Begge `Arduino MKR WiFi 1010`-boards sidder direkte i `Arduino MKR IoT Carrier` 
 
 ### Opsætning af fælles bibliotek (`firmware/shared/`)
 1. Kopier eller symlink `firmware/shared/` ind i din lokale Arduino-biblioteksmappe som `ByggepladsShared` (fx `Documents/Arduino/libraries/ByggepladsShared`).
-2. Kopier `firmware/shared/src/arduino_secrets.example.h` til `firmware/shared/src/arduino_secrets.h` og udfyld Wi-Fi + backend-IP (`arduino_secrets.h` ignoreres af Git).
-3. Åbn `firmware/hazard-radar-02/hazard-radar-02.ino` i Arduino IDE med board **Arduino MKR WiFi 1010**.
+2. Installer følgende biblioteker i Arduino Library Manager: `WiFiNINA`, `ArduinoBLE`, `Arduino_MKRIoTCarrier`, `ArduinoJson`, `Adafruit SleepyDog`, og `QRCode` (ricmoo).
+3. Kopier `firmware/shared/src/arduino_secrets.example.h` til `firmware/shared/src/arduino_secrets.h` og udfyld Wi-Fi, backend-IP, `CHECKIN_URL` og `SHARED_SECRET_KEY` (`arduino_secrets.h` ignoreres af Git).
+4. Flash `firmware/gate-node-01/gate-node-01.ino` til **Arduino #1** og `firmware/hazard-radar-02/hazard-radar-02.ino` til **Arduino #2** (board: **Arduino MKR WiFi 1010**).
