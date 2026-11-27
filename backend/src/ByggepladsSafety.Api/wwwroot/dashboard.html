@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="da">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#16202a">
+    <title>Byggeplads Safety – Formand Dashboard</title>
+    <style>
+        :root { color: #16202a; background: #f3f5f7; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        main { margin: 0 auto; max-width: 1100px; padding: 2rem 1rem; }
+        header { align-items: center; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; margin-bottom: 1.5rem; }
+        h1 { margin: 0; }
+        .status { color: #53606b; }
+        .table-container { background: #fff; border-radius: .75rem; box-shadow: 0 2px 12px #16202a18; overflow-x: auto; }
+        table { border-collapse: collapse; min-width: 720px; width: 100%; }
+        th, td { border-bottom: 1px solid #e5e9ec; padding: .8rem 1rem; text-align: left; vertical-align: top; }
+        th { background: #eef1f3; font-size: .85rem; text-transform: uppercase; }
+        tr:last-child td { border-bottom: 0; }
+        .alarm { color: #a21924; font-weight: 700; }
+        .acknowledged { color: #167c45; font-weight: 700; }
+        button { background: #b51f2a; border: 0; border-radius: .45rem; color: #fff; cursor: pointer; font: inherit; font-weight: 700; padding: .55rem .8rem; }
+        button:disabled { cursor: wait; opacity: .6; }
+        .empty { color: #53606b; padding: 2rem; text-align: center; }
+        .error { color: #a21924; }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Alarmoversigt</h1>
+            <div id="connection-status" class="status">Indlæser…</div>
+        </div>
+        <button id="refresh-button" type="button">Opdater</button>
+    </header>
+    <section class="table-container" aria-label="Registrerede alarmer">
+        <table>
+            <thead>
+            <tr>
+                <th>Tidspunkt</th>
+                <th>Type</th>
+                <th>Enhed</th>
+                <th>Status</th>
+                <th>Reaktion</th>
+                <th>Handling</th>
+            </tr>
+            </thead>
+            <tbody id="incident-rows"><tr><td class="empty" colspan="6">Indlæser alarmer…</td></tr></tbody>
+        </table>
+    </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
+<script>
+(() => {
+    const rows = document.getElementById("incident-rows");
+    const status = document.getElementById("connection-status");
+    const refresh = document.getElementById("refresh-button");
+    const incidents = new Map();
+
+    const formatDate = value => new Date(value).toLocaleString("da-DK");
+    const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
+
+    function render() {
+        const values = [...incidents.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        if (values.length === 0) {
+            rows.innerHTML = '<tr><td class="empty" colspan="6">Ingen registrerede alarmer</td></tr>';
+            return;
+        }
+        rows.innerHTML = values.map(incident => {
+            const acknowledged = incident.status === "ACKNOWLEDGED";
+            return `<tr>
+                <td>${escapeHtml(formatDate(incident.createdAt))}</td>
+                <td>${escapeHtml(incident.eventType)}</td>
+                <td>${escapeHtml(incident.deviceId)}</td>
+                <td class="${acknowledged ? "acknowledged" : "alarm"}">${escapeHtml(incident.status)}</td>
+                <td>${incident.reactionTimeSeconds == null ? "–" : `${escapeHtml(incident.reactionTimeSeconds)} s`}</td>
+                <td>${acknowledged ? escapeHtml(incident.ackSource || "Kvitteret") : `<button type="button" data-ack="${escapeHtml(incident.id)}">Forstået</button>`}</td>
+            </tr>`;
+        }).join("");
+    }
+
+    async function loadIncidents() {
+        status.textContent = "Indlæser alarmer…";
+        try {
+            const response = await fetch("/api/incidents");
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            (await response.json()).forEach(incident => incidents.set(incident.id, incident));
+            render();
+            status.textContent = "Opdateret";
+        } catch (error) {
+            status.textContent = "Alarmer kunne ikke indlæses";
+            rows.innerHTML = `<tr><td class="empty error" colspan="6">${escapeHtml(error.message)}</td></tr>`;
+        }
+    }
+
+    rows.addEventListener("click", async event => {
+        const button = event.target.closest("button[data-ack]");
+        if (!button) return;
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/incidents/${encodeURIComponent(button.dataset.ack)}/ack`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ackSource: "DASHBOARD" })
+            });
+            if (!response.ok) throw new Error(`ACK kunne ikke sendes (${response.status})`);
+            const updated = await response.json();
+            const incident = incidents.get(updated.id);
+            if (incident) Object.assign(incident, updated);
+            render();
+        } catch (error) {
+            status.textContent = error.message;
+            button.disabled = false;
+        }
+    });
+
+    refresh.addEventListener("click", loadIncidents);
+    loadIncidents();
+
+    if (window.signalR) {
+        const connection = new signalR.HubConnectionBuilder().withUrl("/hubs/safety").withAutomaticReconnect().build();
+        connection.on("TriggerAlarm", notification => {
+            incidents.set(notification.incidentId, {
+                id: notification.incidentId,
+                eventType: notification.eventType,
+                deviceId: notification.deviceId,
+                status: "DETECTED",
+                createdAt: notification.createdAt,
+                reactionTimeSeconds: null,
+                ackSource: null
+            });
+            render();
+        });
+        connection.on("ClearAlarm", loadIncidents);
+        connection.start().then(() => connection.invoke("JoinSafetyChannel")).catch(() => { status.textContent = "SignalR ikke forbundet"; });
+    }
+})();
+</script>
+</body>
+</html>
